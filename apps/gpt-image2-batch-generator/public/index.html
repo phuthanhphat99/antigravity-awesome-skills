@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPT Image Batch Studio</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #121a31;
+        --panel-2: #1a2442;
+        --text: #ebefff;
+        --muted: #9ea9ce;
+        --primary: #6c8cff;
+        --danger: #ff6b81;
+        --ok: #36d399;
+        --border: #2a365f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(circle at top right, #172449 0%, var(--bg) 45%);
+      }
+      .container { max-width: 1200px; margin: 0 auto; padding: 16px; }
+      .header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+      .title { font-size: clamp(20px, 3vw, 32px); font-weight: 700; margin: 0; }
+      .badge { padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 12px; }
+      .layout { display: grid; gap: 16px; grid-template-columns: 1.2fr 1fr; }
+      .panel { background: color-mix(in oklab, var(--panel) 90%, black); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+      .panel h2 { margin: 0 0 12px; font-size: 18px; }
+      .row { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+      input, select, textarea, button { font: inherit; }
+      input, select, textarea {
+        width: 100%;
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+      }
+      textarea { min-height: 64px; resize: vertical; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th, td { border-bottom: 1px solid var(--border); padding: 8px; vertical-align: top; }
+      th { color: var(--muted); font-size: 12px; text-align: left; }
+      .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      button {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: var(--panel-2);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .primary { background: linear-gradient(135deg, #5f7dff, #7c66ff); border-color: transparent; }
+      .danger { color: #fff; background: color-mix(in oklab, var(--danger) 60%, #000); }
+      #status { margin-top: 8px; min-height: 22px; color: var(--muted); }
+      .results-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+      .img-card { border: 1px solid var(--border); border-radius: 10px; padding: 8px; background: #0f1730; }
+      .img-card img { width: 100%; border-radius: 8px; margin-top: 8px; aspect-ratio: 1/1; object-fit: cover; }
+      .meta { font-size: 12px; color: var(--muted); }
+      .err { color: var(--danger); font-size: 12px; margin-top: 8px; }
+      .ok { color: var(--ok); }
+
+      @media (max-width: 900px) {
+        .layout { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 640px) {
+        .container { padding: 12px; }
+        .panel { padding: 12px; }
+        .row { grid-template-columns: 1fr; }
+        th:nth-child(1), td:nth-child(1) { width: 34px; }
+        .hide-mobile { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <h1 class="title">GPT Image Batch Studio</h1>
+        <span class="badge">Responsive · PC & Mobile</span>
+      </header>
+
+      <section class="layout">
+        <article class="panel">
+          <h2>Cấu hình tạo ảnh</h2>
+          <div class="row">
+            <div class="field">
+              <label>OpenAI API key</label>
+              <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+            </div>
+            <div class="field">
+              <label>Kích thước</label>
+              <select id="size">
+                <option>1024x1024</option>
+                <option>1024x1536</option>
+                <option>1536x1024</option>
+              </select>
+            </div>
+          </div>
+          <p class="meta">Lưu ý: ChatGPT Plus không cấp API key cho API; bạn cần key từ OpenAI Platform.</p>
+
+          <table id="promptTable">
+            <thead>
+              <tr><th>#</th><th>Prompt</th><th class="hide-mobile">Hành động</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+
+          <div class="btns">
+            <button id="addRow">+ Thêm dòng</button>
+            <button id="importLines">Dán nhiều dòng</button>
+            <button id="clearRows" class="danger">Xóa tất cả</button>
+            <button id="generate" class="primary">Tạo ảnh hàng loạt</button>
+          </div>
+          <div id="status"></div>
+        </article>
+
+        <article class="panel">
+          <h2>Kết quả batch</h2>
+          <div id="results" class="results-grid"></div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const tbody = document.querySelector('#promptTable tbody');
+      const status = document.getElementById('status');
+      const results = document.getElementById('results');
+
+      function refreshIndex() {
+        [...tbody.querySelectorAll('tr')].forEach((tr, i) => tr.querySelector('.idx').textContent = i + 1);
+      }
+
+      function addRow(value = '') {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="idx"></td>
+          <td><textarea placeholder="Nhập prompt...">${value}</textarea></td>
+          <td><button type="button" class="danger">Xóa</button></td>
+        `;
+        tr.querySelector('button').onclick = () => { tr.remove(); refreshIndex(); };
+        tbody.appendChild(tr);
+        refreshIndex();
+      }
+
+      function getPrompts() {
+        return [...tbody.querySelectorAll('textarea')].map(t => t.value.trim());
+      }
+
+      document.getElementById('addRow').onclick = () => addRow('');
+      document.getElementById('clearRows').onclick = () => { tbody.innerHTML = ''; addRow(''); };
+      document.getElementById('importLines').onclick = () => {
+        const input = prompt('Dán danh sách prompt (mỗi dòng 1 prompt):');
+        if (!input) return;
+        const lines = input.split('\n').map(s => s.trim()).filter(Boolean);
+        lines.forEach(line => addRow(line));
+      };
+
+      addRow('Portrait photo of a Vietnamese entrepreneur, modern office, cinematic lighting.');
+      addRow('Luxury perfume product shot on marble table, soft shadows, high-end ad style.');
+
+      document.getElementById('generate').onclick = async () => {
+        const apiKey = document.getElementById('apiKey').value.trim();
+        const size = document.getElementById('size').value;
+        const prompts = getPrompts().filter(Boolean);
+
+        if (!apiKey) { status.textContent = 'Vui lòng nhập API key.'; return; }
+        if (!prompts.length) { status.textContent = 'Vui lòng nhập ít nhất 1 prompt.'; return; }
+
+        status.textContent = `Đang tạo ${prompts.length} ảnh...`;
+        results.innerHTML = '';
+
+        try {
+          const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey, size, prompts })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'API lỗi');
+
+          let ok = 0;
+          data.results.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'img-card';
+            card.innerHTML = `<div><b>#${item.index + 1}</b></div><div class="meta">${item.prompt || '(rỗng)'}</div>`;
+            if (item.imageDataUrl) {
+              ok += 1;
+              const img = document.createElement('img');
+              img.src = item.imageDataUrl;
+              card.appendChild(img);
+              const dl = document.createElement('a');
+              dl.href = item.imageDataUrl;
+              dl.download = `gpt-image-${item.index + 1}.png`;
+              dl.textContent = 'Tải ảnh';
+              dl.className = 'ok';
+              card.appendChild(dl);
+            } else {
+              const err = document.createElement('div');
+              err.className = 'err';
+              err.textContent = item.error || 'Tạo ảnh thất bại';
+              card.appendChild(err);
+            }
+            results.appendChild(card);
+          });
+
+          status.innerHTML = `<span class="ok">Hoàn tất: ${ok}/${data.results.length} ảnh thành công.</span>`;
+        } catch (e) {
+          status.textContent = `Lỗi: ${e.message}`;
+        }
+      };
+    </script>
+  </body>
+</html>
